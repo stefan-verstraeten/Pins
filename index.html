@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#F3EEE3">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Pins">
+  <title>Pins</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="vendor/leaflet.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="map" aria-label="Map of memories"></div>
+
+  <header class="masthead">
+    <h1 class="wordmark">Pins</h1>
+    <p class="tagline">An atlas of experiences</p>
+    <p class="tally num" id="tally"></p>
+    <div class="active-filters" id="active-filters"></div>
+  </header>
+
+  <nav class="tools" aria-label="Map tools">
+    <button class="tool" id="btn-filter" aria-label="Filter memories" aria-expanded="false">
+      <svg viewBox="0 0 24 24"><path d="M4 7h16M7 12h10M10 17h4"/></svg>
+      <span class="tool-label">Filter</span><span class="badge" id="filter-count" hidden></span>
+    </button>
+    <button class="tool" id="btn-time" aria-label="Time travel" aria-pressed="false">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/></svg>
+      <span class="tool-label">Time</span>
+    </button>
+    <button class="tool" id="btn-fit" aria-label="Show all memories">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c2.5 2.2 3.6 5 3.6 8s-1.1 5.8-3.6 8M12 4c-2.5 2.2-3.6 5-3.6 8s1.1 5.8 3.6 8"/></svg>
+      <span class="tool-label">World</span>
+    </button>
+  </nav>
+
+  <div class="bottom" id="bottom">
+    <section class="timeline" id="timeline" hidden aria-label="Time travel">
+      <button class="play" id="btn-play" aria-label="Replay the years">
+        <svg viewBox="0 0 24 24"><path d="M8 5.5v13l10-6.5z"/></svg>
+      </button>
+      <div class="tl-body">
+        <div class="tl-head">
+          <p class="eyebrow">Time travel</p>
+          <p class="tl-range" id="tl-range"></p>
+        </div>
+        <div class="tl-track">
+          <div class="tl-bars" id="tl-bars"></div>
+          <input type="range" id="tl-from" aria-label="From year">
+          <input type="range" id="tl-to" aria-label="To year">
+        </div>
+        <div class="tl-years num" id="tl-years"></div>
+      </div>
+    </section>
+
+    <section class="strip" id="strip">
+      <button class="strip-head" id="strip-toggle" aria-expanded="true">
+        <span class="eyebrow">In view</span>
+        <span class="strip-count" id="strip-count"></span>
+        <svg class="chev" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg>
+      </button>
+      <div class="strip-cards" id="strip-cards"></div>
+    </section>
+  </div>
+
+  <button class="add" id="btn-add" aria-label="Add a memory">
+    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+
+  <aside class="sheet filters" id="filters" hidden aria-label="Filters">
+    <div class="sheet-head">
+      <h2 class="h2">Filter</h2>
+      <button class="close" data-close="filters" aria-label="Close">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="sheet-body" id="filters-body"></div>
+  </aside>
+
+  <aside class="sheet memory" id="memory" hidden aria-label="Memory">
+    <button class="close floating" data-close="memory" aria-label="Close">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+    <div class="sheet-body" id="memory-body"></div>
+  </aside>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <script src="vendor/leaflet.js"></script>
+  <script src="vendor/markercluster.js"></script>
+  <script src="vendor/topojson-client.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
