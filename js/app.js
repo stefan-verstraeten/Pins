@@ -272,7 +272,7 @@ function paintBars() {
   const z = map.getZoom();
   if (z >= Z_PINS) return;
 
-  const bw = z < 3 ? 3.5 : z < 6 ? 4 : z < 9 ? 5 : 6;
+  const bw = z < 3 ? 4 : z < 6 ? 5 : z < 9 ? 6 : 7;
   const hMax = Math.min(150, 60 + 12 * z);
   const byPlace = {};
   for (const p of filtered()) (byPlace[p.place] ||= []).push(p);
@@ -284,7 +284,7 @@ function paintBars() {
     // Several memories at one place spread into a small cluster of bars (golden-angle spiral,
     // flattened as if seen at an angle), so a place you keep returning to becomes a little massif.
     ps.forEach((p, i) => {
-      const r = i ? bw * 1.25 * Math.sqrt(i) : 0;
+      const r = i ? bw * 0.8 * Math.sqrt(i) : 0;
       const a = i * 2.39996;
       items.push({ p, x: pt.x + r * Math.cos(a), y: pt.y + r * Math.sin(a) * 0.45, h: 4 + (hMax - 4) * WEIGHT[p.id] ** 1.3 });
     });
@@ -294,25 +294,47 @@ function paintBars() {
 
   for (const it of items) {
     const c = colourOf(it.p);
-    const x = Math.round(it.x - bw / 2);
-    const top = it.y - it.h;
+    const peak = peakPath(it.x, it.y, bw, it.h);
+    const rbs = peakHalfWidth(bw, it.h);
     ctx.fillStyle = 'rgba(47,49,43,.13)';
-    ctx.beginPath(); ctx.ellipse(it.x + 1, it.y, bw * 0.9, bw * 0.38, 0, 0, Math.PI * 2); ctx.fill();
-    const half = bw >= 4 ? Math.ceil(bw / 2) : bw;
-    ctx.fillStyle = `rgb(${c.join(',')})`;
-    ctx.fillRect(x, top, half, it.h);
-    if (half < bw) { ctx.fillStyle = shade(c, 0.8); ctx.fillRect(x + half, top, bw - half, it.h); }
-    ctx.fillStyle = tint(c, 0.35);
-    ctx.fillRect(x, top, bw, Math.min(2, it.h));
-    // A hairline of paper on the lit side keeps neighbouring bars legible inside a range.
-    ctx.fillStyle = 'rgba(249,246,239,.55)';
-    ctx.fillRect(x, top, 0.75, it.h);
+    ctx.beginPath(); ctx.ellipse(it.x + rbs * 0.2, it.y + 0.5, rbs * 1.1, Math.min(rbs * 0.32, 5), 0, 0, Math.PI * 2); ctx.fill();
+    // Lit from the upper left: a soft gradient across the width gives the peak its roundness.
+    const rb = peakHalfWidth(bw, it.h);
+    const g = ctx.createLinearGradient(it.x - rb, 0, it.x + rb, 0);
+    g.addColorStop(0, tint(c, 0.28));
+    g.addColorStop(0.45, `rgb(${c.join(',')})`);
+    g.addColorStop(1, shade(c, 0.68));
+    ctx.fillStyle = g;
+    ctx.fill(peak);
+    // A paper rim keeps neighbouring peaks legible inside a range.
+    ctx.strokeStyle = 'rgba(249,246,239,.6)'; ctx.lineWidth = 0.6;
+    ctx.stroke(peak);
     if (it.p.place === selectedPlace) {
-      ctx.strokeStyle = '#2F312B'; ctx.lineWidth = 1.25;
-      ctx.strokeRect(x - 1.5, top - 1.5, bw + 3, it.h + 3);
+      ctx.strokeStyle = '#2F312B'; ctx.lineWidth = 1.4;
+      ctx.stroke(peak);
     }
-    hits.push({ p: it.p, x0: x, x1: x + bw, y0: top, y1: it.y + 2 });
+    hits.push({ p: it.p, x0: it.x - rb * 0.5, x1: it.x + rb * 0.5, y0: it.y - it.h, y1: it.y + 2 });
   }
+}
+
+// One peak: a bell-shaped profile — rounded summit, flanks that flare out towards the
+// ground like foothills — standing on an elliptical footprint. Its width grows with its
+// height, so neighbouring peaks merge into ranges.
+const peakHalfWidth = (bw, h) => Math.max(bw * 0.6, h * 0.3);
+function peakPath(cx, y, bw, h) {
+  const rb = peakHalfWidth(bw, h);
+  const ry = Math.min(rb * 0.3, 4);
+  const path = new Path2D();
+  const N = 18;
+  for (let k = 0; k <= N; k++) {
+    const u = -1 + (2 * k) / N;
+    const px = cx + u * rb;
+    const py = y - h * Math.cos((Math.PI * u) / 2) ** 1.8;
+    if (k) path.lineTo(px, py); else path.moveTo(px, py);
+  }
+  path.ellipse(cx, y, rb, ry, 0, 0, Math.PI);
+  path.closePath();
+  return path;
 }
 
 function barAt(pt) {
