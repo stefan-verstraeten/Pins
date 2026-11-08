@@ -14,7 +14,8 @@ const ALIAS = { 'United States': 'United States of America', 'Czech Republic': '
 // the UK into its four nations, and France, Norway and the Netherlands into home country and
 // overseas parts, so a trip to Paris doesn't colour in French Guiana.
 const SPLIT = new Set(['United Kingdom', 'France', 'Norway', 'Netherlands']);
-const DISPLAY = { 'United States of America': 'United States' };
+const DISPLAY = { 'United States of America': 'United States', Vatican: 'Vatican City' };
+const shown = (name) => DISPLAY[name] || name;
 const MARK_KEY = 'pins.countries.marked';
 
 export function initCountries({ PINS, placeById, colourAt, timeT, onOpen }) {
@@ -58,8 +59,8 @@ export function initCountries({ PINS, placeById, colourAt, timeT, onOpen }) {
     if (s) {
       const y0 = s.first.date.slice(0, 4); const y1 = s.last.date.slice(0, 4);
       el.innerHTML = `<b>${esc(s.shown)}</b> · ${s.n} ${s.n === 1 ? 'memory' : 'memories'} · ${y0 === y1 ? y0 : `${y0}–${y1}`}`;
-    } else if (marked.has(name)) el.innerHTML = `<b>${esc(name)}</b> · visited, no memories yet`;
-    else el.innerHTML = `<b>${esc(name)}</b> · not yet`;
+    } else if (marked.has(name)) el.innerHTML = `<b>${esc(shown(name))}</b> · visited, no memories yet`;
+    else el.innerHTML = `<b>${esc(shown(name))}</b> · not yet`;
   }
 
   function onCountry(f) {
@@ -74,29 +75,34 @@ export function initCountries({ PINS, placeById, colourAt, timeT, onOpen }) {
   }
 
   function drawDots() {
-    // Small countries vanish at world scale; give each visited one a dot.
+    // Small countries vanish at world scale; give each visited one a dot. While marking,
+    // the others get a hollow dot too, so the Vatican or Monaco can be tapped at all.
     dots.clearLayers();
-    for (const f of features) {
+    // Hollow dots first, so coloured ones sit on top where they crowd (around the Adriatic).
+    const order = [...features].sort((a, b) => !!fillOf(a.properties.name) - !!fillOf(b.properties.name));
+    for (const f of order) {
       const name = f.properties.name;
       const fill = fillOf(name);
-      if (!fill || !f._bounds) continue;
+      if ((!fill && !marking) || !f._bounds) continue;
       const b = f._bounds;
       if (b.getNorth() - b.getSouth() > 2.5 || b.getEast() - b.getWest() > 2.5) continue;
-      L.circleMarker(b.getCenter(), { radius: 4.5, color: '#42443D', weight: 0.8, fillColor: fill, fillOpacity: 1 })
-        .on('click', () => onCountry(f)).addTo(dots);
+      const style = fill
+        ? { radius: 4.5, color: '#42443D', weight: 0.8, fillColor: fill, fillOpacity: 1 }
+        : { radius: 4.5, color: '#8A8B7C', weight: 1, fillColor: '#F9F6EF', fillOpacity: 0.9 };
+      L.circleMarker(b.getCenter(), style).on('click', () => onCountry(f)).addTo(dots);
     }
   }
 
   function list() {
     const rows = Object.keys(stats).map((name) => ({ name, s: stats[name] }))
       .sort((a, b) => a.s.first.date.localeCompare(b.s.first.date));
-    const extra = [...marked].filter((n) => !stats[n]).sort();
+    const extra = [...marked].filter((n) => !stats[n]).sort((a, b) => shown(a).localeCompare(shown(b)));
     const total = rows.length + extra.length;
     $('c-count').textContent = `${total} ${total === 1 ? 'country' : 'countries'}${extra.length ? ` · ${extra.length} without memories` : ''}`;
     $('c-list').innerHTML = rows.map(({ name, s }) => {
       const y0 = s.first.date.slice(0, 4);
       return `<li><i style="background:rgb(${colourAt(timeT(s.first)).join(',')})"></i><span class="c-name">${esc(s.shown)}</span><span class="c-meta num">${s.n} · since ${y0}</span></li>`;
-    }).join('') + extra.map((n) => `<li class="marked"><i></i><span class="c-name">${esc(n)}</span><span class="c-meta">no memories</span></li>`).join('');
+    }).join('') + extra.map((n) => `<li class="marked"><i></i><span class="c-name">${esc(shown(n))}</span><span class="c-meta">no memories</span></li>`).join('');
   }
 
   function refresh() {
@@ -135,6 +141,7 @@ export function initCountries({ PINS, placeById, colourAt, timeT, onOpen }) {
     $('c-mark').setAttribute('aria-pressed', String(on));
     $('c-mark').textContent = on ? 'Done' : 'Mark visited';
     $('countries').classList.toggle('marking', on);
+    if (dots) drawDots();
     info(null);
   }
 
