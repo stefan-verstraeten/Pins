@@ -9,7 +9,11 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 // Our place names → Natural Earth names (used by world-atlas). The real data model will store ISO codes.
-const ALIAS = { 'United States': 'United States of America', Scotland: 'United Kingdom', England: 'United Kingdom', Wales: 'United Kingdom', 'Northern Ireland': 'United Kingdom', 'Czech Republic': 'Czechia' };
+const ALIAS = { 'United States': 'United States of America', 'Czech Republic': 'Czechia' };
+// world-atlas draws these as one shape each; subunits-50m.json (Natural Earth map units) splits them:
+// the UK into its four nations, and France, Norway and the Netherlands into home country and
+// overseas parts, so a trip to Paris doesn't colour in French Guiana.
+const SPLIT = new Set(['United Kingdom', 'France', 'Norway', 'Netherlands']);
 const DISPLAY = { 'United States of America': 'United States' };
 const MARK_KEY = 'pins.countries.marked';
 
@@ -105,9 +109,9 @@ export function initCountries({ PINS, placeById, colourAt, timeT, onOpen }) {
       zoomControl: false, attributionControl: false, zoomSnap: 0.25, minZoom: 0.5, maxZoom: 7,
       maxBounds: [[-70, -200], [85, 200]], maxBoundsViscosity: 0.8,
     });
-    const topo = await fetch('vendor/countries-50m.json').then((r) => r.json());
+    const [topo, sub] = await Promise.all(['vendor/countries-50m.json', 'vendor/subunits-50m.json'].map((u) => fetch(u).then((r) => r.json())));
     const geo = unwrapGeo(window.topojson.feature(topo, topo.objects.countries));
-    geo.features = geo.features.filter((f) => f.properties.name !== 'Antarctica');
+    geo.features = geo.features.filter((f) => f.properties.name !== 'Antarctica' && !SPLIT.has(f.properties.name)).concat(sub.features);
     layer = L.geoJSON(geo, {
       style,
       onEachFeature: (f, l) => { f._bounds = l.getBounds(); features.push(f); l.on('click', () => onCountry(f)); },

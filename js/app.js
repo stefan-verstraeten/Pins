@@ -320,16 +320,17 @@ function paintBars() {
 // One peak: a bell-shaped profile — rounded summit, flanks that flare out towards the
 // ground like foothills — standing on an elliptical footprint. Its width grows with its
 // height, so neighbouring peaks merge into ranges.
-const peakHalfWidth = (bw, h) => Math.max(bw * 0.6, h * 0.3);
+const peakHalfWidth = (bw, h) => Math.max(bw * 0.55, h * 0.2);
 function peakPath(cx, y, bw, h) {
   const rb = peakHalfWidth(bw, h);
   const ry = Math.min(rb * 0.3, 4);
   const path = new Path2D();
-  const N = 18;
+  const N = 24;
   for (let k = 0; k <= N; k++) {
     const u = -1 + (2 * k) / N;
     const px = cx + u * rb;
-    const py = y - h * Math.cos((Math.PI * u) / 2) ** 1.8;
+    // Concave flanks rising to a sharp summit, like a real peak.
+    const py = y - h * (1 - Math.abs(u)) ** 1.7;
     if (k) path.lineTo(px, py); else path.moveTo(px, py);
   }
   path.ellipse(cx, y, rb, ry, 0, 0, Math.PI);
