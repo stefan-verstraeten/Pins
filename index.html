@@ -22,6 +22,7 @@
     <h1 class="wordmark">Pins</h1>
     <p class="tagline">An atlas of experiences</p>
     <p class="tally num" id="tally"></p>
+    <div class="legend num" aria-label="Colour shows when: oldest to newest"><span id="lg-from"></span><i id="lg-ramp"></i><span id="lg-to"></span></div>
     <div class="active-filters" id="active-filters"></div>
   </header>
 
@@ -89,6 +90,23 @@
     </button>
     <div class="sheet-body" id="memory-body"></div>
   </aside>
+
+  <section class="page countries" id="countries" hidden aria-label="Countries">
+    <header class="page-head">
+      <div>
+        <p class="eyebrow">Atlas</p>
+        <h2 class="h2">Countries</h2>
+        <p class="c-count num" id="c-count"></p>
+      </div>
+      <button class="btn" id="c-mark" aria-pressed="false">Mark visited</button>
+      <button class="close" id="c-close" aria-label="Close">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </header>
+    <div class="c-map" id="cmap"></div>
+    <p class="c-info" id="c-info"></p>
+    <ul class="c-list" id="c-list"></ul>
+  </section>
 
   <div class="toast" id="toast" role="status" hidden></div>
 

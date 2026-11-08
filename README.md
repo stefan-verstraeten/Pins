@@ -18,10 +18,16 @@ Grand Tour's language, evolved so the map becomes the application.
   (`vendor/land-50m.json`, `countries-50m.json`). From zoom 4–6 it cross-fades into
   precise tiles (Esri Light Gray Canvas), recoloured to paper and sea by an SVG
   duotone filter (`#warm`).
-- **Pins, one family with three expressions:** photographic (a thumbnail),
-  categorical (a quiet symbol) and typographic (an initial, for memories that are
-  mostly words). Zoomed out, they become dots of category colour; clusters show
-  density, with a photo once you're close enough.
+- **A landscape of bars.** Every memory is a vertical bar at its place. Colour is
+  time, on a continuous ramp from the oldest memory in the atlas to the newest (five
+  ramps to choose from in Filter, `js/ramps.js`). Height is weight: richness (words,
+  photos) times density (memories within ~100 km). Long trips rise as mountain
+  ranges, short ones as hills.
+- **Pins up close.** From street level (zoom 12) the bars give way to pins in three
+  expressions: photographic, categorical (a symbol) and typographic (an initial).
+- **Countries.** Tap the country count for a world map with every visited country
+  coloured by the time of its first memory. Countries can also be marked visited by
+  hand (stored in the browser for now).
 - **Filters** across five dimensions: category, who was there, recorded by,
   trips/collections and time, plus saved views. Contributor and participants stay
   separate concepts.

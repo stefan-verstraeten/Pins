@@ -1,5 +1,8 @@
 // Pins — map prototype. The map is home; everything else layers over it.
 import { PEOPLE, KINDS, PLACES, TRIPS, COLLECTIONS, PINS } from '../sample/data.js';
+import { RAMPS, DEFAULT_RAMP, ramp } from './ramps.js';
+import { unwrapGeo, km } from './geo.js';
+import { initCountries } from './countries.js';
 
 const L = window.L;
 const $ = (id) => document.getElementById(id);
@@ -48,6 +51,7 @@ const map = L.map('map', {
   maxBounds: [[-75, -200], [85, 200]], maxBoundsViscosity: 0.8, minZoom: 1.5, maxZoom: 18,
 }).setView([30, 20], 2);
 L.control.attribution({ position: 'bottomright', prefix: false }).addTo(map);
+window.pinsMap = map; // handy in the console
 
 // The atlas: Natural Earth land, drawn as a quiet engraving. Character when zoomed out.
 map.createPane('atlas').style.zIndex = 150;
@@ -66,31 +70,7 @@ const atlasRenderer = L.svg({ pane: 'atlas', padding: 0.5 });
   for (let lon = -180; lon <= 180; lon += 30) grat.push([[-80, lon], [85, lon]]);
   for (let lat = -60; lat <= 80; lat += 20) grat.push([[lat, -180], [lat, 180]]);
   L.polyline(grat, { renderer: atlasRenderer, pane: 'atlas', color: '#42443D', weight: 0.6, opacity: 0.1, dashArray: '1 5', interactive: false }).addTo(map);
-  // Rings that cross the antimeridian jump from 180 to -180; unwrap them so Leaflet
-  // doesn't draw a band across the whole world.
-  // (Antarctica's rings circle the pole — an odd number of jumps — and are fine as they are.)
-  const unwrap = (ring) => {
-    const jumps = ring.filter((p, i) => i && Math.abs(p[0] - ring[i - 1][0]) > 180).length;
-    if (!jumps || jumps % 2) return ring;
-    let prev = ring[0][0];
-    const out = ring.map((pt) => {
-      let lon = pt[0];
-      while (lon - prev > 180) lon -= 360;
-      while (lon - prev < -180) lon += 360;
-      prev = lon;
-      return [lon, pt[1]];
-    });
-    // Keep the bulk of the ring on the main world (Eurasia's ring may start in Chukotka).
-    const mid = out.map((p) => p[0]).sort((a, b) => a - b)[out.length >> 1];
-    const shift = mid < -180 ? 360 : mid > 180 ? -360 : 0;
-    return shift ? out.map(([lon, lat]) => [lon + shift, lat]) : out;
-  };
-  const landGeo = topojson.feature(land, land.objects.land);
-  for (const f of landGeo.features || [landGeo]) {
-    const g = f.geometry || f;
-    if (g.type === 'Polygon') g.coordinates = g.coordinates.map(unwrap);
-    if (g.type === 'MultiPolygon') g.coordinates = g.coordinates.map((poly) => poly.map(unwrap));
-  }
+  const landGeo = unwrapGeo(topojson.feature(land, land.objects.land));
   L.geoJSON(landGeo, {
     renderer: atlasRenderer, pane: 'atlas', interactive: false,
     style: { color: '#6F7064', weight: 0.7, opacity: 0.75, fillColor: '#F3EEE3', fillOpacity: 1 },
@@ -149,6 +129,10 @@ function blend() {
   el.classList.toggle('z-far', z < 4.5);
   el.classList.toggle('z-mid', z >= 4.5 && z < 11);
   el.classList.toggle('z-near', z >= 11);
+  // Bars are the landscape; up close, at street level, the photographic pins take over.
+  const near = z >= Z_PINS;
+  if (near !== map.hasLayer(clusters)) { if (near) map.addLayer(clusters); else map.removeLayer(clusters); }
+  drawBars();
 }
 map.on('zoomend', blend);
 
@@ -190,7 +174,6 @@ const clusters = L.markerClusterGroup({
     return L.divIcon({ className: '', iconSize: [0, 0], html: `<div class="cluster" style="--s:${size}px">${n}</div>` });
   },
 });
-map.addLayer(clusters);
 clusters.on('clusterclick', (e) => { e.layer.zoomToBounds({ paddingTopLeft: [60, 170], paddingBottomRight: [80, $('bottom').offsetHeight + 40] }); });
 
 let markerByPlace = {};
@@ -219,10 +202,141 @@ function drawMarkers() {
 function setSelected(pid) {
   const prev = selectedPlace;
   selectedPlace = pid;
+  if (prev !== pid) drawBars();
   for (const id of [prev, pid]) {
     const m = id && markerByPlace[id];
     if (m) m.setIcon(L.divIcon({ className: '', iconSize: [0, 0], html: pinHtml(m.options.rep, m.options.visits.length, id === pid) }));
   }
+}
+
+// ---------- bars: the landscape of memories ----------
+// Every memory is a vertical bar at its place. Colour = when (oldest → newest in the whole
+// atlas); height = weight, from richness (words, photos) and density (memories nearby).
+// Big trips rise as mountain ranges, short ones as hills.
+
+const Z_PINS = 12;
+const day = (d) => Date.parse(d) / 864e5;
+const T0 = Math.min(...PINS.map((p) => day(p.date)));
+const T1 = Math.max(...PINS.map((p) => day(p.date)));
+const timeT = (p) => (T1 > T0 ? (day(p.date) - T0) / (T1 - T0) : 1);
+
+const RAMP_KEY = 'pins.ramp';
+let rampId = (() => { try { return RAMPS[localStorage.getItem(RAMP_KEY)] ? localStorage.getItem(RAMP_KEY) : DEFAULT_RAMP; } catch { return DEFAULT_RAMP; } })();
+const colourOf = (p) => ramp(rampId)(timeT(p));
+
+const wordCount = (p) => [p.title, p.note, p.quote, p.standfirst, ...(p.body || []).map((b) => b.p || b.caption)]
+  .filter(Boolean).join(' ').split(/\s+/).length;
+const richness = (p) => 1 + 0.6 * Math.min(photoCount(p), 8) + Math.min(wordCount(p), 400) / 80;
+
+// Density: a Gaussian sum over memories within ~100 km (σ = 40 km), using a 1° grid so it
+// stays fast with tens of thousands of memories.
+const SIGMA = 40;
+const WEIGHT = (() => {
+  const cell = (pl) => `${Math.floor(pl.lat)},${Math.floor(pl.lon)}`;
+  const grid = {};
+  for (const p of PINS) (grid[cell(placeById[p.place])] ||= []).push(p);
+  const w = {};
+  for (const p of PINS) {
+    const a = placeById[p.place];
+    const cy = Math.floor(a.lat); const cx = Math.floor(a.lon);
+    let d = 0;
+    for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
+      for (const q of grid[`${cy + i},${cx + j}`] || []) {
+        if (q === p) continue;
+        const k = km(a, placeById[q.place]);
+        if (k < SIGMA * 3) d += Math.exp(-((k / SIGMA) ** 2));
+      }
+    }
+    w[p.id] = Math.sqrt(richness(p)) * (1 + 0.8 * Math.log2(1 + d));
+  }
+  const max = Math.max(...Object.values(w));
+  for (const id in w) w[id] /= max;
+  return w;
+})();
+
+map.createPane('bars').style.zIndex = 450;
+const barCanvas = L.canvas({ pane: 'bars', padding: 0.4 });
+map.addLayer(barCanvas);
+barCanvas._container.style.pointerEvents = 'none';
+// Leaflet's canvas clears itself and calls _draw() whenever the view changes; we paint the bars there.
+barCanvas._draw = paintBars;
+function drawBars() { if (barCanvas._map && barCanvas._ctx) barCanvas._redraw(); }
+
+let hits = [];
+const shade = ([r, g, b], f) => `rgb(${Math.round(r * f)},${Math.round(g * f)},${Math.round(b * f)})`;
+const tint = ([r, g, b], f) => `rgb(${Math.round(r + (255 - r) * f)},${Math.round(g + (255 - g) * f)},${Math.round(b + (255 - b) * f)})`;
+
+function paintBars() {
+  const ctx = barCanvas._ctx;
+  hits = [];
+  const z = map.getZoom();
+  if (z >= Z_PINS) return;
+
+  const bw = z < 3 ? 3.5 : z < 6 ? 4 : z < 9 ? 5 : 6;
+  const hMax = Math.min(150, 60 + 12 * z);
+  const byPlace = {};
+  for (const p of filtered()) (byPlace[p.place] ||= []).push(p);
+  const items = [];
+  for (const [pid, ps] of Object.entries(byPlace)) {
+    const pl = placeById[pid];
+    const pt = map.latLngToLayerPoint([pl.lat, pl.lon]);
+    ps.sort((a, b) => a.date.localeCompare(b.date));
+    // Several memories at one place spread into a small cluster of bars (golden-angle spiral,
+    // flattened as if seen at an angle), so a place you keep returning to becomes a little massif.
+    ps.forEach((p, i) => {
+      const r = i ? bw * 1.25 * Math.sqrt(i) : 0;
+      const a = i * 2.39996;
+      items.push({ p, x: pt.x + r * Math.cos(a), y: pt.y + r * Math.sin(a) * 0.45, h: 4 + (hMax - 4) * WEIGHT[p.id] ** 1.3 });
+    });
+  }
+  // Paint from the back (north, top of the screen) to the front.
+  items.sort((a, b) => a.y - b.y);
+
+  for (const it of items) {
+    const c = colourOf(it.p);
+    const x = Math.round(it.x - bw / 2);
+    const top = it.y - it.h;
+    ctx.fillStyle = 'rgba(47,49,43,.13)';
+    ctx.beginPath(); ctx.ellipse(it.x + 1, it.y, bw * 0.9, bw * 0.38, 0, 0, Math.PI * 2); ctx.fill();
+    const half = bw >= 4 ? Math.ceil(bw / 2) : bw;
+    ctx.fillStyle = `rgb(${c.join(',')})`;
+    ctx.fillRect(x, top, half, it.h);
+    if (half < bw) { ctx.fillStyle = shade(c, 0.8); ctx.fillRect(x + half, top, bw - half, it.h); }
+    ctx.fillStyle = tint(c, 0.35);
+    ctx.fillRect(x, top, bw, Math.min(2, it.h));
+    // A hairline of paper on the lit side keeps neighbouring bars legible inside a range.
+    ctx.fillStyle = 'rgba(249,246,239,.55)';
+    ctx.fillRect(x, top, 0.75, it.h);
+    if (it.p.place === selectedPlace) {
+      ctx.strokeStyle = '#2F312B'; ctx.lineWidth = 1.25;
+      ctx.strokeRect(x - 1.5, top - 1.5, bw + 3, it.h + 3);
+    }
+    hits.push({ p: it.p, x0: x, x1: x + bw, y0: top, y1: it.y + 2 });
+  }
+}
+
+function barAt(pt) {
+  const pad = 7;
+  for (let i = hits.length - 1; i >= 0; i--) {
+    const h = hits[i];
+    if (pt.x >= h.x0 - pad && pt.x <= h.x1 + pad && pt.y >= h.y0 - pad && pt.y <= h.y1 + pad) return h.p;
+  }
+  return null;
+}
+map.on('mousemove', (e) => { map.getContainer().style.cursor = barAt(e.layerPoint) ? 'pointer' : ''; });
+
+function legend() {
+  $('lg-ramp').style.background = ramp(rampId).css(10);
+  $('lg-from').textContent = new Date(T0 * 864e5).getUTCFullYear();
+  $('lg-to').textContent = new Date(T1 * 864e5).getUTCFullYear();
+}
+
+function setRamp(id) {
+  rampId = id;
+  try { localStorage.setItem(RAMP_KEY, id); } catch { /* private mode */ }
+  legend();
+  drawBars();
+  countries.refresh();
 }
 
 // ---------- tally & strip ----------
@@ -231,7 +345,7 @@ function tally() {
   const pins = filtered();
   const places = new Set(pins.map((p) => p.place));
   const countries = new Set(pins.map((p) => placeById[p.place].country));
-  $('tally').textContent = `${pins.length} memories · ${places.size} places · ${countries.size} countries`;
+  $('tally').innerHTML = `${pins.length} memories · ${places.size} places · <button class="tally-link" id="btn-countries">${countries.size} countries</button>`;
 }
 
 function cardHtml(p) {
@@ -258,7 +372,7 @@ $('strip-cards').addEventListener('click', (e) => {
   const c = e.target.closest('.card');
   if (!c) return;
   const pl = placeById[c.dataset.place];
-  map.flyTo([pl.lat, pl.lon], Math.max(map.getZoom(), 13), { duration: 1.1 });
+  map.flyTo([pl.lat, pl.lon], Math.max(map.getZoom(), Z_PINS + 1), { duration: 1.1 });
   openPlace(c.dataset.place, c.dataset.pin);
 });
 $('strip-toggle').addEventListener('click', () => {
@@ -349,7 +463,11 @@ document.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { closeSheet('memory'); closeSheet('filters'); }
 });
-map.on('click', () => closeSheet('memory'));
+map.on('click', (e) => {
+  const p = map.getZoom() < Z_PINS && barAt(e.layerPoint);
+  if (p) openPlace(p.place, p.id);
+  else closeSheet('memory');
+});
 
 // ---------- filters ----------
 
@@ -386,7 +504,9 @@ function renderFilters() {
   const collChips = COLLECTIONS.map((c) => `<button class="chip" data-set="${c.id}" ${pressed(F.sets.includes(c.id))}>${esc(c.title)}</button>`).join('');
   const views = savedViews().map((v, i) => `<button class="view-row" data-view="${i}"><span><span class="vt">${esc(v.name)}</span><br><span class="vs">${esc(describe(v.f))}</span></span><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>`).join('');
 
+  const ramps = Object.entries(RAMPS).map(([id, r]) => `<button class="ramp-row" data-ramp="${id}" ${pressed(id === rampId)}><i style="background:${ramp(id).css(10)}"></i><span><span class="vt">${r.name}</span><br><span class="vs">${r.note}</span></span></button>`).join('');
   $('filters-body').innerHTML = `
+    <div class="f-group"><p class="eyebrow">Colour of time</p><p class="f-hint">Bars run from your oldest memory to your newest.</p><div class="ramps">${ramps}</div></div>
     <div class="f-group"><p class="eyebrow">Saved views</p><div class="views">${views}</div></div>
     <div class="f-group"><p class="eyebrow">Category</p><div class="chips">${kindChips}</div></div>
     <div class="f-group"><p class="eyebrow">Who was there</p><p class="f-hint">Choose several to find memories you shared.</p><div class="chips">${withChips}</div></div>
@@ -405,6 +525,7 @@ $('filters-body').addEventListener('click', (e) => {
   else if ('alone' in t.dataset) { F.alone = !F.alone; if (F.alone) F.with = []; }
   else if (t.dataset.with) { F.with = toggle(F.with, t.dataset.with); F.alone = false; }
   else if (t.dataset.by) F.by = t.dataset.by;
+  else if (t.dataset.ramp) { setRamp(t.dataset.ramp); renderFilters(); return; }
   else if (t.dataset.set) F.sets = toggle(F.sets, t.dataset.set);
   else if (t.dataset.view) { F = { ...blank(), ...savedViews()[+t.dataset.view].f }; syncTimeline(); apply(); fitAll(); return; }
   else if (t.id === 'reset') { F = blank(); syncTimeline(); }
@@ -533,6 +654,7 @@ $('btn-add').addEventListener('click', () => toast('Quick capture is the next de
 
 function apply({ keepFilters = false } = {}) {
   drawMarkers();
+  drawBars();
   tally();
   strip();
   activeChips();
@@ -540,6 +662,10 @@ function apply({ keepFilters = false } = {}) {
   if (!keepFilters && !$('filters').hidden) renderFilters();
 }
 
+const countries = initCountries({ PINS, placeById, colourAt: (t) => ramp(rampId)(t), timeT, onOpen: () => { closeSheet('memory'); closeSheet('filters'); } });
+document.addEventListener('click', (e) => { if (e.target.closest('#btn-countries')) countries.open(); });
+
+legend();
 apply();
 layoutBottom();
 requestAnimationFrame(() => { fitAll(false); blend(); });
