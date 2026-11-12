@@ -320,15 +320,15 @@ function paintBars() {
       ctx.strokeStyle = '#2F312B'; ctx.lineWidth = 1.4;
       ctx.stroke(peak);
     }
-    hits.push({ p: it.p, x0: it.x - Math.max(bw * 0.6, rb * 0.4), x1: it.x + Math.max(bw * 0.6, rb * 0.4), y0: it.y - it.h, y1: it.y + 2 });
+    hits.push({ p: it.p, x0: it.x - Math.max(bw, rb * 0.5), x1: it.x + Math.max(bw, rb * 0.5), y0: it.y - it.h, y1: it.y + 2 });
   }
 }
 
 // One peak: a spire with concave flanks — a needle summit sweeping out into a broad,
 // low skirt — standing on an elliptical footprint. The skirt widens with height, so
 // neighbouring peaks run together into ranges.
-const peakHalfWidth = (bw, h) => Math.max(bw * 0.7, h * 0.26);
-const CONCAVE = 2.8;
+const peakHalfWidth = (bw, h) => Math.max(bw * 0.3, h * 0.087);
+const CONCAVE = 3.6;
 const profile = (u) => (1 - Math.abs(u)) ** CONCAVE;
 function peakPath(cx, y, bw, h) {
   const rb = peakHalfWidth(bw, h);
@@ -352,8 +352,8 @@ function shadowPath(cx, y, bw, h) {
   for (let k = 0; k <= N; k++) {
     const u = -1 + (2 * k) / N;
     const up = h * profile(u);
-    const px = cx + u * rb + up * 0.62;
-    const py = y - up * 0.16;
+    const px = cx + u * rb + up * 1.05;
+    const py = y - up * 0.24;
     if (k) path.lineTo(px, py); else path.moveTo(px, py);
   }
   path.ellipse(cx, y, rb, Math.min(rb * 0.28, 4), 0, 0, Math.PI);

@@ -18,7 +18,7 @@ Grand Tour's language, evolved so the map becomes the application.
   (`vendor/land-50m.json`, `countries-50m.json`). From zoom 4–6 it cross-fades into
   precise tiles (Esri Light Gray Canvas), recoloured to paper and sea by an SVG
   duotone filter (`#warm`).
-- **A landscape of peaks.** Every memory is a spire at its place (concave flanks sweeping from a needle summit to a broad skirt, casting a soft shadow to the right). Colour is
+- **A landscape of peaks.** Every memory is a needle-thin spire at its place (concave flanks flaring to a narrow base, casting a long soft shadow to the right). Colour is
   time, on a continuous ramp from the oldest memory in the atlas to the newest (five
   ramps to choose from in Filter, `js/ramps.js`). Height is weight: richness (words,
   photos) times density (memories within ~100 km). Long trips rise as mountain
