@@ -1,21 +1,63 @@
-// Pins — map prototype. The map is home; everything else layers over it.
-import { PEOPLE, KINDS, PLACES, TRIPS, COLLECTIONS, PINS } from '../sample/data.js';
+// Pins. The map is home; everything else layers over it.
+import * as lib from './library.js';
 import { RAMPS, DEFAULT_RAMP, ramp } from './ramps.js';
 import { unwrapGeo, km } from './geo.js';
 import { initCountries } from './countries.js';
+import { initCapture, open as openCapture, close as closeCapture } from './capture.js';
+import { initSettings, closeLibrary } from './settings.js';
+
+const { KINDS } = lib;
+await lib.start();
 
 const L = window.L;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const placeById = Object.fromEntries(PLACES.map((p) => [p.id, p]));
-const tripById = Object.fromEntries(TRIPS.map((t) => [t.id, t]));
-const personById = Object.fromEntries(PEOPLE.map((p) => [p.id, p]));
-const collById = Object.fromEntries(COLLECTIONS.map((c) => [c.id, c]));
+
+// ---------- data ----------
+// Your memories and (if shown) the examples, re-read whenever the library changes.
+const THIS_YEAR = new Date().getFullYear();
+let PEOPLE = []; let PLACES = []; let TRIPS = []; let COLLECTIONS = []; let PINS = [];
+let placeById = {}; let tripById = {}; let personById = {}; let collById = {};
+let Y0 = THIS_YEAR; let Y1 = THIS_YEAR; let T0 = 0; let T1 = 0; let WEIGHT = {};
+
+function reindex() {
+  const v = lib.view();
+  ({ people: PEOPLE, places: PLACES, trips: TRIPS, collections: COLLECTIONS } = v);
+  placeById = Object.fromEntries(PLACES.map((p) => [p.id, p]));
+  tripById = Object.fromEntries(TRIPS.map((t) => [t.id, t]));
+  personById = Object.fromEntries(PEOPLE.map((p) => [p.id, p]));
+  collById = Object.fromEntries(COLLECTIONS.map((c) => [c.id, c]));
+  // A memory whose place hasn't arrived yet (mid-sync) waits until it has.
+  PINS = v.pins.filter((p) => placeById[p.place]);
+  const years = PINS.map(year);
+  Y0 = years.length ? Math.min(...years) : THIS_YEAR;
+  Y1 = years.length ? Math.max(...years) : THIS_YEAR;
+  const days = PINS.map((p) => day(p.date));
+  T0 = days.length ? Math.min(...days) : Date.now() / 864e5;
+  T1 = days.length ? Math.max(...days) : T0;
+  WEIGHT = weights();
+}
+const name = (id) => personById[id]?.name || id;
+const initial = (id) => personById[id]?.initial || '?';
 const year = (p) => +p.date.slice(0, 4);
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const fmtDate = (d) => { const [y, m, day] = d.split('-'); return `${+day} ${MONTHS[m - 1]} ${y}`; };
-const img = (name) => `sample/img/${name}.jpg`;
-const photoUrl = (p) => img(p.photo);
+// Photos: examples are files in the app; yours load from this phone or Dropbox, so an <img>
+// may start empty and be filled in when its photo arrives (see hydrate below).
+function imgTag(ref, size = 'thumb', extra = '') {
+  const src = lib.photoSrc(ref, size);
+  return src ? `<img src="${src}" alt="" ${extra}>` : `<img data-ph="${esc(ref)}" data-size="${size}" alt="" ${extra}>`;
+}
+function hydrate(root) {
+  for (const el of root.querySelectorAll ? root.querySelectorAll('img[data-ph]') : []) {
+    const { ph, size } = el.dataset;
+    el.removeAttribute('data-ph');
+    lib.loadPhoto(ph, size).then((u) => { el.src = u; }).catch(() => { el.classList.add('missing'); });
+  }
+}
+new MutationObserver((muts) => { for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) hydrate(n.matches?.('img[data-ph]') ? n.parentNode : n); })
+  .observe(document.body, { childList: true, subtree: true });
+const day = (d) => Date.parse(d) / 864e5;
 const isStory = (p) => Array.isArray(p.body);
 const storyPhotos = (p) => (p.body || []).flatMap((b) => (b.img ? [b.img] : b.imgs || []));
 const photoCount = (p) => new Set([p.photo, ...storyPhotos(p)].filter(Boolean)).size;
@@ -23,9 +65,6 @@ let CREDITS = {};
 fetch('sample/credits.json').then((r) => r.json()).then((c) => { CREDITS = c; }).catch(() => {});
 const expression = (p) => (p.photo ? 'photo' : p.quote ? 'text' : 'sym');
 
-const YEARS = PINS.map(year);
-const Y0 = Math.min(...YEARS);
-const Y1 = Math.max(...YEARS);
 
 // ---------- filter state ----------
 
@@ -150,7 +189,7 @@ const glyph = (k) => `<svg viewBox="0 0 24 24">${KINDS[k].glyph}</svg>`;
 
 function pinHtml(rep, visits, selected) {
   const ex = expression(rep);
-  const inner = ex === 'photo' ? `<img src="${photoUrl(rep)}" alt="" loading="lazy">`
+  const inner = ex === 'photo' ? imgTag(rep.photo, 'thumb', 'loading="lazy"')
     : ex === 'text' ? `<span>${esc(rep.title.replace(/^[“"'‘]/, '')[0])}</span>` : glyph(rep.kind);
   const badge = visits > 1 ? `<i class="visits">${visits}</i>` : '';
   const label = `<div class="pin-label">${esc(placeById[rep.place].name)}</div>`;
@@ -169,7 +208,7 @@ const clusters = L.markerClusterGroup({
     const withPhoto = kids.map((m) => m.options.rep).find((p) => p.photo);
     if ((cluster._zoom ?? map.getZoom()) >= 5 && withPhoto) {
       const s = Math.max(46, size + 6);
-      return L.divIcon({ className: '', iconSize: [0, 0], html: `<div class="cluster photo" style="--s:${s}px"><img src="${photoUrl(withPhoto)}" alt=""><span class="n">${n}</span></div>` });
+      return L.divIcon({ className: '', iconSize: [0, 0], html: `<div class="cluster photo" style="--s:${s}px">${imgTag(withPhoto.photo)}<span class="n">${n}</span></div>` });
     }
     return L.divIcon({ className: '', iconSize: [0, 0], html: `<div class="cluster" style="--s:${size}px">${n}</div>` });
   },
@@ -215,9 +254,6 @@ function setSelected(pid) {
 // Big trips rise as mountain ranges, short ones as hills.
 
 const Z_PINS = 12;
-const day = (d) => Date.parse(d) / 864e5;
-const T0 = Math.min(...PINS.map((p) => day(p.date)));
-const T1 = Math.max(...PINS.map((p) => day(p.date)));
 const timeT = (p) => (T1 > T0 ? (day(p.date) - T0) / (T1 - T0) : 1);
 
 const RAMP_KEY = 'pins.ramp';
@@ -231,7 +267,8 @@ const richness = (p) => 1 + 0.6 * Math.min(photoCount(p), 8) + Math.min(wordCoun
 // Density: a Gaussian sum over memories within ~100 km (σ = 40 km), using a 1° grid so it
 // stays fast with tens of thousands of memories.
 const SIGMA = 40;
-const WEIGHT = (() => {
+function weights() {
+  if (!PINS.length) return {};
   const cell = (pl) => `${Math.floor(pl.lat)},${Math.floor(pl.lon)}`;
   const grid = {};
   for (const p of PINS) (grid[cell(placeById[p.place])] ||= []).push(p);
@@ -252,7 +289,7 @@ const WEIGHT = (() => {
   const max = Math.max(...Object.values(w));
   for (const id in w) w[id] /= max;
   return w;
-})();
+}
 
 map.createPane('bars').style.zIndex = 450;
 const barCanvas = L.canvas({ pane: 'bars', padding: 0.4 });
@@ -391,14 +428,15 @@ function tally() {
   const pins = filtered();
   const places = new Set(pins.map((p) => p.place));
   const countries = new Set(pins.map((p) => placeById[p.place].country));
-  $('tally').innerHTML = `${pins.length} memories · ${places.size} places · <button class="tally-link" id="btn-countries">${countries.size} countries</button>`;
+  const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+  $('tally').innerHTML = `${n(pins.length, 'memory', 'memories')} · ${n(places.size, 'place', 'places')} · <button class="tally-link" id="btn-countries">${n(countries.size, 'country', 'countries')}</button>`;
 }
 
 function cardHtml(p) {
   const ex = expression(p);
   const n = photoCount(p);
   const badge = isStory(p) ? `<span class="card-badge">Story${n > 1 ? ` · ${n} photos` : ''}</span>` : '';
-  const img = ex === 'photo' ? `<div class="card-img"><img src="${photoUrl(p)}" alt="" loading="lazy">${badge}</div>`
+  const img = ex === 'photo' ? `<div class="card-img">${imgTag(p.photo, 'thumb', 'loading="lazy"')}${badge}</div>`
     : ex === 'text' ? `<div class="card-img text"><q>${esc(p.quote)}</q></div>`
     : `<div class="card-img sym">${glyph(p.kind)}</div>`;
   const pl = placeById[p.place];
@@ -438,14 +476,14 @@ map.on('moveend', strip);
 // ---------- memory sheet ----------
 
 function people(ids) {
-  return `<span class="people">${ids.map((id) => `<span class="person"><span class="av">${esc(personById[id].initial)}</span>${esc(personById[id].name)}</span>`).join('')}</span>`;
+  return `<span class="people">${ids.map((id) => `<span class="person"><span class="av">${esc(initial(id))}</span>${esc(name(id))}</span>`).join('')}</span>`;
 }
 
 const credit = (name) => {
   const c = CREDITS[name];
   return c ? `<figcaption class="credit">${esc(c.author)} · ${esc(c.license)}</figcaption>` : '';
 };
-const figure = (name, caption, cls = '') => `<figure class="story-fig ${cls}"><img src="${img(name)}" alt="" loading="lazy">${caption ? `<p class="caption">${esc(caption)}</p>` : ''}${credit(name)}</figure>`;
+const figure = (ref, caption, cls = '') => `<figure class="story-fig ${cls}">${imgTag(ref, 'full', 'loading="lazy"')}${caption ? `<p class="caption">${esc(caption)}</p>` : ''}${credit(ref)}</figure>`;
 
 function storyBody(p) {
   return p.body.map((b) => {
@@ -458,14 +496,14 @@ function storyBody(p) {
 
 function visitHtml(p, i) {
   const trip = p.trip && tripById[p.trip];
-  const photo = p.photo ? `<figure class="visit-photo${i === 0 ? ' first' : ''}"><img src="${photoUrl(p)}" alt="">${credit(p.photo)}</figure>` : '';
+  const photo = p.photo ? `<figure class="visit-photo${i === 0 ? ' first' : ''}">${imgTag(p.photo, 'full')}${credit(p.photo)}</figure>` : '';
   const withLabel = p.with.length === 1 && p.with[0] === p.by ? 'Alone' : people(p.with);
   const tags = [`<span class="tag k">${esc(KINDS[p.kind].label)}</span>`]
     .concat(p.tags.map((t) => `<span class="tag">${esc(KINDS[t]?.label || t[0].toUpperCase() + t.slice(1))}</span>`))
-    .concat((p.collections || []).map((c) => `<span class="tag">${esc(collById[c].title)}</span>`));
+    .concat((p.collections || []).filter((c) => collById[c]).map((c) => `<span class="tag">${esc(collById[c].title)}</span>`));
   return `<article class="visit memory-k-${p.kind}">
     ${photo}
-    <p class="eyebrow">${esc(fmtDate(p.date))}${isStory(p) ? ` · Story · ${photoCount(p)} photos` : ''}</p>
+    <p class="eyebrow">${esc(fmtDate(p.date))}${isStory(p) ? ` · Story · ${photoCount(p)} photos` : ''}${p.sample ? ' · <span class="sample-note">Example</span>' : ''}</p>
     <h3 class="visit-title${isStory(p) ? ' story-title' : ''}">${esc(p.title)}</h3>
     ${p.standfirst ? `<p class="standfirst">${esc(p.standfirst)}</p>` : ''}
     ${p.note ? `<p class="visit-note">${esc(p.note)}</p>` : ''}
@@ -473,10 +511,11 @@ function visitHtml(p, i) {
     ${p.quote ? `<p class="visit-quote">${esc(p.quote)}</p>` : ''}
     <dl class="facts">
       <dt>With</dt><dd>${withLabel}</dd>
-      <dt>Recorded by</dt><dd>${esc(personById[p.by].name)}</dd>
+      <dt>Recorded by</dt><dd>${esc(name(p.by))}</dd>
       ${trip ? `<dt>Trip</dt><dd>${esc(trip.title)}, ${MONTHS[+trip.start.slice(5, 7) - 1]} ${trip.start.slice(0, 4)}</dd>` : ''}
     </dl>
     <div class="tags">${tags.join('')}</div>
+    ${p.sample ? '' : `<div class="visit-actions"><button class="btn" data-edit="${p.id}">Edit</button></div>`}
   </article>`;
 }
 
@@ -498,6 +537,8 @@ function openPlace(pid, pinId) {
 }
 
 function closeSheet(id) {
+  if (id === 'capture') return closeCapture();
+  if (id === 'library') return closeLibrary();
   $(id).hidden = true;
   if (id === 'memory') setSelected(null);
   if (id === 'filters') $('btn-filter').setAttribute('aria-expanded', 'false');
@@ -507,7 +548,7 @@ document.addEventListener('click', (e) => {
   if (c) closeSheet(c.dataset.close);
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { closeSheet('memory'); closeSheet('filters'); }
+  if (e.key === 'Escape') { closeSheet('memory'); closeSheet('filters'); closeSheet('library'); if (!$('capture').hidden && confirm('Close without saving?')) closeSheet('capture'); }
 });
 map.on('click', (e) => {
   const p = map.getZoom() < Z_PINS && barAt(e.layerPoint);
@@ -518,13 +559,13 @@ map.on('click', (e) => {
 // ---------- filters ----------
 
 const SAVED_KEY = 'pins.views';
-const DEFAULT_VIEWS = [
+const DEFAULT_VIEWS = () => [
   { name: 'Culture with Marleen', f: { ...blank(), kinds: ['culture'], with: ['marleen'], from: 2023, to: Y1 } },
   { name: 'Memorable tables', f: { ...blank(), sets: ['tables'] } },
   { name: 'Places I saw alone', f: { ...blank(), alone: true } },
 ];
 function savedViews() {
-  try { return JSON.parse(localStorage.getItem(SAVED_KEY)) || DEFAULT_VIEWS; } catch { return DEFAULT_VIEWS; }
+  try { return JSON.parse(localStorage.getItem(SAVED_KEY)) || DEFAULT_VIEWS(); } catch { return DEFAULT_VIEWS(); }
 }
 function storeViews(v) { try { localStorage.setItem(SAVED_KEY, JSON.stringify(v)); } catch { /* private mode */ } }
 
@@ -532,9 +573,9 @@ function describe(f) {
   const parts = [];
   if (f.kinds.length) parts.push(f.kinds.map((k) => KINDS[k].label).join(' or '));
   if (f.alone) parts.push('alone');
-  if (f.with.length) parts.push(`with ${f.with.map((w) => personById[w].name).join(' & ')}`);
-  if (f.by !== 'any') parts.push(`by ${personById[f.by].name}`);
-  if (f.sets.length) parts.push(f.sets.map((s) => (tripById[s] || collById[s]).title).join(', '));
+  if (f.with.length) parts.push(`with ${f.with.map(name).join(' & ')}`);
+  if (f.by !== 'any') parts.push(`by ${name(f.by)}`);
+  if (f.sets.length) parts.push(f.sets.map((s) => (tripById[s] || collById[s])?.title || '…').join(', '));
   if (f.from !== Y0 || f.to !== Y1) parts.push(f.from === f.to ? `${f.from}` : `${f.from}–${f.to}`);
   return parts.join(' · ') || 'Everything';
 }
@@ -590,9 +631,9 @@ function activeChips() {
   const x = '<svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7 7 17"/></svg>';
   F.kinds.forEach((k) => chips.push([`kind:${k}`, KINDS[k].label]));
   if (F.alone) chips.push(['alone', 'Alone']);
-  F.with.forEach((w) => chips.push([`with:${w}`, `With ${personById[w].name}`]));
-  if (F.by !== 'any') chips.push(['by', `By ${personById[F.by].name}`]);
-  F.sets.forEach((s) => chips.push([`set:${s}`, (tripById[s] || collById[s]).title]));
+  F.with.forEach((w) => chips.push([`with:${w}`, `With ${name(w)}`]));
+  if (F.by !== 'any') chips.push(['by', `By ${name(F.by)}`]);
+  F.sets.forEach((s) => chips.push([`set:${s}`, (tripById[s] || collById[s])?.title || '…']));
   if (F.from !== Y0 || F.to !== Y1) chips.push(['time', F.from === F.to ? `${F.from}` : `${F.from}–${F.to}`]);
   $('active-filters').innerHTML = chips.map(([k, l]) => `<button class="af" data-af="${k}">${esc(l)}${x}</button>`).join('');
   const n = activeCount();
@@ -623,9 +664,11 @@ $('btn-filter').addEventListener('click', () => {
 
 const from = $('tl-from');
 const to = $('tl-to');
-for (const r of [from, to]) { r.min = Y0; r.max = Y1; r.step = 1; }
-$('timeline').style.setProperty('--n', Y1 - Y0 + 1);
-$('tl-years').innerHTML = Array.from({ length: Y1 - Y0 + 1 }, (_, i) => `<span>${(i === 0 || i === Y1 - Y0 || (Y0 + i) % 5 === 0) ? Y0 + i : ''}</span>`).join('');
+function setupTimeline() {
+  for (const r of [from, to]) { r.min = Y0; r.max = Y1; r.step = 1; }
+  $('timeline').style.setProperty('--n', Y1 - Y0 + 1);
+  $('tl-years').innerHTML = Array.from({ length: Y1 - Y0 + 1 }, (_, i) => `<span>${(i === 0 || i === Y1 - Y0 || (Y0 + i) % 5 === 0) ? Y0 + i : ''}</span>`).join('');
+}
 
 function syncTimeline() { from.value = F.from; to.value = F.to; }
 function bars() {
@@ -645,7 +688,6 @@ function onRange(e) {
 }
 from.addEventListener('input', onRange);
 to.addEventListener('input', onRange);
-syncTimeline();
 
 $('btn-time').addEventListener('click', () => {
   const on = $('timeline').hidden;
@@ -681,6 +723,7 @@ $('btn-play').addEventListener('click', () => {
 
 function fitAll(animate = true) {
   const pins = filtered();
+  if (!PINS.length) { map.setView([30, 10], map.getMinZoom(), { animate }); return; }
   const pts = (pins.length ? pins : PINS).map((p) => [placeById[p.place].lat, placeById[p.place].lon]);
   const bottom = $('bottom').offsetHeight;
   map.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [40, 150], paddingBottomRight: [40, bottom + 30], animate, maxZoom: 12 });
@@ -694,7 +737,11 @@ function toast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { $('toast').hidden = true; }, 2600);
 }
-$('btn-add').addEventListener('click', () => toast('Quick capture is the next design step.'));
+$('btn-add').addEventListener('click', () => { closeSheet('memory'); closeSheet('filters'); closeSheet('library'); openCapture(); });
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-edit]');
+  if (b) { closeSheet('memory'); openCapture(b.dataset.edit); }
+});
 
 // ---------- apply ----------
 
@@ -708,10 +755,52 @@ function apply({ keepFilters = false } = {}) {
   if (!keepFilters && !$('filters').hidden) renderFilters();
 }
 
-const countries = initCountries({ PINS, placeById, colourAt: (t) => ramp(rampId)(t), timeT, onOpen: () => { closeSheet('memory'); closeSheet('filters'); } });
+const countries = initCountries({
+  data: () => ({ PINS, placeById }), colourAt: (t) => ramp(rampId)(t), timeT,
+  marks: lib.marks, setMark: lib.setMark,
+  onOpen: () => { closeSheet('memory'); closeSheet('filters'); closeSheet('library'); },
+});
 document.addEventListener('click', (e) => { if (e.target.closest('#btn-countries')) countries.open(); });
 
+initCapture({
+  toast,
+  // After saving, go to the memory: on the map, with its place open.
+  onSaved: (m) => {
+    const pl = placeById[m.place];
+    if (!pl) return;
+    if (F.from > year(m) || F.to < year(m) || !passes(m, { ...F, from: Y0, to: Y1 })) { F = blank(); syncTimeline(); apply(); }
+    map.flyTo([pl.lat, pl.lon], Math.max(map.getZoom(), 9), { duration: 1 });
+    openPlace(m.place, m.id);
+  },
+});
+initSettings({ toast, onOpen: () => { closeSheet('memory'); closeSheet('filters'); } });
+
+// When the library changes (a save, a sync from the other phone, examples switched on or
+// off): re-read everything and redraw, keeping the time filter where it makes sense.
+function refreshData() {
+  const [oy0, oy1] = [Y0, Y1];
+  reindex();
+  F.from = F.from === oy0 ? Y0 : Math.max(Y0, Math.min(F.from, Y1));
+  F.to = F.to === oy1 ? Y1 : Math.min(Y1, Math.max(F.to, Y0));
+  setupTimeline(); syncTimeline();
+  legend();
+  apply();
+  countries.refresh();
+  if (!$('memory').hidden && selectedPlace) {
+    if (placeById[selectedPlace] && filtered().some((p) => p.place === selectedPlace)) openPlace(selectedPlace);
+    else closeSheet('memory');
+  }
+}
+let refreshQueued = false;
+lib.onChange(() => { if (!refreshQueued) { refreshQueued = true; queueMicrotask(() => { refreshQueued = false; refreshData(); }); } });
+
+reindex();
+F = blank();
+setupTimeline(); syncTimeline();
 legend();
 apply();
 layoutBottom();
 requestAnimationFrame(() => { fitAll(false); blend(); });
+
+// Offline: the app shell is kept by a service worker, so Pins opens without a connection.
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});

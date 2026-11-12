@@ -28,13 +28,43 @@ Grand Tour's language, evolved so the map becomes the application.
 - **Countries.** Tap the country count for a world map with every visited country
   coloured by the time of its first memory. Countries can also be marked visited by
   hand, by tapping the map or typing a name (any common name works: Holland, Burma,
-  Holy See; see `js/country-names.js`), and are stored in the browser for now. England, Scotland, Wales and Northern Ireland
+  Holy See; see `js/country-names.js`), and sync with your memories. England, Scotland, Wales and Northern Ireland
   count separately, as do France's overseas departments, Svalbard, Jan Mayen and the
   Caribbean Netherlands (`vendor/subunits-50m.json`, cut from Natural Earth map units
   by `tools/subunits.py`).
 - **Filters** across five dimensions: category, who was there, recorded by,
   trips/collections and time, plus saved views. Contributor and participants stay
   separate concepts.
+
+- **Quick capture.** The + button adds a memory: photos first (date and place are read
+  from each photo's EXIF), then title and text, the place (search, your location, or
+  the map under a cross; names come from OpenStreetMap's Nominatim), category, who was
+  there, who recorded it and the trip. One paragraph is a note (or a quote, if it starts
+  with “); more paragraphs or photos make a story. Your own memories can be edited and
+  deleted.
+
+## Your memories
+
+Kept on the phone first (IndexedDB), so capture works offline, then synced to Dropbox:
+
+```
+/Pins/pins.json                 places, trips, people, memories, marked countries
+/Pins/photos/<year>/<id>.jpg    photo masters, 3,200 px on the long side
+```
+
+Every record carries `updatedAt`; deletions leave a tombstone. Two phones syncing at once
+are merged record by record (newer wins), using Dropbox revisions to detect the race.
+Photos upload before the memory that uses them. The examples in `sample/` are never
+written to Dropbox, and the Library sheet (cloud button) can hide them.
+
+**Setting up Dropbox (once):** create an app at dropbox.com/developers/apps with
+*Scoped access* and *Full Dropbox*; give it the permissions `files.content.read` and
+`files.content.write`; add the redirect URIs `https://stefan-verstraeten.github.io/Pins/`
+and `http://localhost:8010/`; put its App key in `js/config.js`. Share the `/Pins`
+folder with the second Dropbox account so both phones use the same atlas.
+
+The app shell is cached by a service worker (`sw.js`, network first), so Pins opens
+without a connection.
 
 ## Run locally
 

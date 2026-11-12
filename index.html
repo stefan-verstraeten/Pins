@@ -39,6 +39,10 @@
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c2.5 2.2 3.6 5 3.6 8s-1.1 5.8-3.6 8M12 4c-2.5 2.2-3.6 5-3.6 8s1.1 5.8 3.6 8"/></svg>
       <span class="tool-label">World</span>
     </button>
+    <button class="tool" id="btn-library" aria-label="Library and sync" aria-expanded="false">
+      <svg viewBox="0 0 24 24"><path d="M7.5 18.5h9.5a3.5 3.5 0 0 0 .4-7 5.5 5.5 0 0 0-10.6-1.2A4.2 4.2 0 0 0 7.5 18.5z"/></svg>
+      <span class="tool-label">Library</span><span class="badge dot" id="sync-dot" hidden></span>
+    </button>
   </nav>
 
   <div class="bottom" id="bottom">
@@ -89,6 +93,45 @@
       <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
     </button>
     <div class="sheet-body" id="memory-body"></div>
+  </aside>
+
+  <aside class="sheet library" id="library" hidden aria-label="Library">
+    <div class="sheet-head">
+      <h2 class="h2">Library</h2>
+      <button class="close" data-close="library" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="sheet-body" id="library-body"></div>
+  </aside>
+
+  <aside class="sheet capture" id="capture" hidden aria-label="Memory editor">
+    <div class="sheet-head">
+      <h2 class="h2" id="cap-heading">New memory</h2>
+      <button class="close" data-close="capture" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <form class="sheet-body cap" id="cap-form" novalidate autocomplete="off">
+      <div class="cap-photos" id="cap-photos"></div>
+      <input class="cap-title" id="cap-title" placeholder="Title" aria-label="Title" enterkeyhint="next">
+      <textarea class="cap-text" id="cap-text" rows="5" aria-label="Text" placeholder="What happened? A blank line starts a new paragraph. Start with “ to make it a quote."></textarea>
+      <div class="f-group"><p class="eyebrow">When</p><input class="cap-input" type="date" id="cap-date" aria-label="Date"></div>
+      <div class="f-group">
+        <p class="eyebrow">Where</p>
+        <div class="cap-search">
+          <input class="cap-input" type="search" id="cap-q" placeholder="Search a place or address" aria-label="Search a place" enterkeyhint="search">
+          <button type="button" class="btn" id="cap-find">Search</button>
+          <button type="button" class="btn icon" id="cap-here" aria-label="Use where I am"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="7"/></svg></button>
+        </div>
+        <ul class="c-sugg cap-results" id="cap-results" hidden></ul>
+        <div class="cap-mapwrap"><div class="cap-map" id="cap-map"></div><i class="cap-cross" aria-hidden="true"></i></div>
+        <p class="f-hint cap-where" id="cap-where"></p>
+        <input class="cap-input" id="cap-place" placeholder="Name of the place" aria-label="Name of the place">
+        <div class="cap-row"><input class="cap-input" id="cap-city" placeholder="Town or city" aria-label="Town or city"><input class="cap-input" id="cap-country" placeholder="Country" aria-label="Country"></div>
+      </div>
+      <div class="f-group"><p class="eyebrow">Category</p><div class="chips" id="cap-kind"></div></div>
+      <div class="f-group"><p class="eyebrow">Who was there</p><div class="chips" id="cap-with"></div></div>
+      <div class="f-group"><p class="eyebrow">Recorded by</p><div class="seg" id="cap-by"></div></div>
+      <div class="f-group"><p class="eyebrow">Trip</p><div class="chips" id="cap-trip"></div></div>
+      <div class="f-actions"><button class="btn primary" type="submit" id="cap-save">Save</button><button class="btn" type="button" id="cap-delete" hidden>Delete</button></div>
+    </form>
   </aside>
 
   <section class="page countries" id="countries" hidden aria-label="Countries">

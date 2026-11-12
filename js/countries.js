@@ -15,23 +15,29 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 // the UK into its four nations, and France, Norway and the Netherlands into home country and
 // overseas parts, so a trip to Paris doesn't colour in French Guiana.
 const SPLIT = new Set(['United Kingdom', 'France', 'Norway', 'Netherlands']);
-const MARK_KEY = 'pins.countries.marked';
 
-export function initCountries({ PINS, placeById, colourAt, timeT, onOpen }) {
-  let marked = new Set();
-  try { marked = new Set(JSON.parse(localStorage.getItem(MARK_KEY)) || []); } catch { /* private mode */ }
-  const saveMarked = () => { try { localStorage.setItem(MARK_KEY, JSON.stringify([...marked])); } catch { /* private mode */ } };
-
+// data(): the memories and places on the map right now. Marks (countries visited without
+// memories) live in the library, so they sync between phones.
+export function initCountries({ data, colourAt, timeT, onOpen, marks, setMark }) {
+  let marked = new Set(marks());
+  
   // Per country: memories, first and last memory.
-  const stats = {};
-  for (const p of PINS) {
-    const raw = placeById[p.place].country;
-    const name = resolveName(raw);
-    const s = (stats[name] ||= { n: 0, first: p, last: p, shown: shown(name) });
-    s.n++;
-    if (p.date < s.first.date) s.first = p;
-    if (p.date > s.last.date) s.last = p;
+  let stats = {};
+  function restat() {
+    const { PINS, placeById } = data();
+    stats = {};
+    marked = new Set(marks());
+    for (const p of PINS) {
+      const raw = placeById[p.place]?.country;
+      if (!raw) continue;
+      const name = resolveName(raw);
+      const s = (stats[name] ||= { n: 0, first: p, last: p, shown: shown(name) });
+      s.n++;
+      if (p.date < s.first.date) s.first = p;
+      if (p.date > s.last.date) s.last = p;
+    }
   }
+  restat();
 
   let map = null;
   let layer = null;
@@ -67,7 +73,7 @@ export function initCountries({ PINS, placeById, colourAt, timeT, onOpen }) {
   function toggle(name, on = !marked.has(name)) {
     if (stats[name]) { info(name); $('c-info').innerHTML += ' · coloured by its memories'; return; }
     if (on) marked.add(name); else marked.delete(name);
-    saveMarked();
+    setMark(name, on);
     refresh();
     info(name);
   }
@@ -134,6 +140,7 @@ export function initCountries({ PINS, placeById, colourAt, timeT, onOpen }) {
   }
 
   function refresh() {
+    restat();
     if (layer) { layer.setStyle(style); drawDots(); }
     list();
   }
@@ -161,6 +168,8 @@ export function initCountries({ PINS, placeById, colourAt, timeT, onOpen }) {
   function open() {
     onOpen?.();
     $('countries').hidden = false;
+    restat();
+    if (layer) { layer.setStyle(style); drawDots(); }
     list();
     info(null);
     if (!map) build(); else requestAnimationFrame(fit);
