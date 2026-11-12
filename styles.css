@@ -448,3 +448,16 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round
 .c-list li.marked i { background: #BDB8A2; }
 .c-name { flex: 1; font: 500 18px/1.1 var(--serif); color: var(--ink-strong); }
 .c-meta { font: 400 11.5px/1 var(--sans); color: var(--muted); }
+.c-x { flex: 0 0 auto; margin: -6px -6px -6px 0; width: 30px; height: 30px; border: 0; background: none; color: var(--muted); font: 300 20px/1 var(--sans); cursor: pointer; }
+.c-x:hover { color: var(--ink-strong); }
+.c-add { position: relative; margin: 10px 22px 4px; }
+/* 16px keeps iOS from zooming in on focus. */
+.c-add input { width: 100%; box-sizing: border-box; height: 40px; padding: 0 14px; border: 1px solid var(--rule-strong); border-radius: 20px;
+  background: rgba(249, 246, 239, .8); color: var(--ink-strong); font: 400 16px/1 var(--sans); -webkit-appearance: none; appearance: none; }
+.c-add input::placeholder { color: var(--muted); }
+.c-add input:focus { outline: none; border-color: var(--olive-deep); background: #F9F6EF; }
+.c-sugg { list-style: none; margin: 6px 0 0; padding: 4px 0; border-radius: 12px; background: #F9F6EF; box-shadow: var(--shadow); }
+.c-sugg button { display: flex; width: 100%; align-items: baseline; gap: 10px; padding: 9px 14px; border: 0; background: none; text-align: left; cursor: pointer; color: var(--ink-strong); }
+.c-sugg button:hover, .c-sugg li:first-child button { background: rgba(137, 149, 129, .12); }
+.c-sugg span { flex: 1; font: 500 18px/1.1 var(--serif); }
+.c-sugg small { font: 400 11.5px/1 var(--sans); color: var(--muted); }

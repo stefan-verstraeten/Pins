@@ -292,48 +292,71 @@ function paintBars() {
   // Paint from the back (north, top of the screen) to the front.
   items.sort((a, b) => a.y - b.y);
 
+  // First every cast shadow, so they fall across the ground (and the foot of peaks behind)
+  // without darkening the faces of peaks in front.
+  ctx.save();
+  ctx.fillStyle = 'rgba(52,48,62,.11)';
+  ctx.shadowColor = 'rgba(52,48,62,.22)';
+  ctx.shadowBlur = 4;
+  for (const it of items) ctx.fill(shadowPath(it.x, it.y, bw, it.h));
+  ctx.restore();
+
   for (const it of items) {
     const c = colourOf(it.p);
     const peak = peakPath(it.x, it.y, bw, it.h);
-    const rbs = peakHalfWidth(bw, it.h);
-    ctx.fillStyle = 'rgba(47,49,43,.13)';
-    ctx.beginPath(); ctx.ellipse(it.x + rbs * 0.2, it.y + 0.5, rbs * 1.1, Math.min(rbs * 0.32, 5), 0, 0, Math.PI * 2); ctx.fill();
-    // Lit from the upper left: a soft gradient across the width gives the peak its roundness.
     const rb = peakHalfWidth(bw, it.h);
-    const g = ctx.createLinearGradient(it.x - rb, 0, it.x + rb, 0);
-    g.addColorStop(0, tint(c, 0.28));
-    g.addColorStop(0.45, `rgb(${c.join(',')})`);
-    g.addColorStop(1, shade(c, 0.68));
+    // Lit from the left: the sunny flank pale, the far flank in shade.
+    const g = ctx.createLinearGradient(it.x - rb * 0.6, 0, it.x + rb * 0.6, 0);
+    g.addColorStop(0, tint(c, 0.4));
+    g.addColorStop(0.42, `rgb(${c.join(',')})`);
+    g.addColorStop(0.58, shade(c, 0.8));
+    g.addColorStop(1, shade(c, 0.62));
     ctx.fillStyle = g;
     ctx.fill(peak);
     // A paper rim keeps neighbouring peaks legible inside a range.
-    ctx.strokeStyle = 'rgba(249,246,239,.6)'; ctx.lineWidth = 0.6;
+    ctx.strokeStyle = 'rgba(249,246,239,.55)'; ctx.lineWidth = 0.5;
     ctx.stroke(peak);
     if (it.p.place === selectedPlace) {
       ctx.strokeStyle = '#2F312B'; ctx.lineWidth = 1.4;
       ctx.stroke(peak);
     }
-    hits.push({ p: it.p, x0: it.x - rb * 0.5, x1: it.x + rb * 0.5, y0: it.y - it.h, y1: it.y + 2 });
+    hits.push({ p: it.p, x0: it.x - Math.max(bw * 0.6, rb * 0.4), x1: it.x + Math.max(bw * 0.6, rb * 0.4), y0: it.y - it.h, y1: it.y + 2 });
   }
 }
 
-// One peak: a bell-shaped profile — rounded summit, flanks that flare out towards the
-// ground like foothills — standing on an elliptical footprint. Its width grows with its
-// height, so neighbouring peaks merge into ranges.
-const peakHalfWidth = (bw, h) => Math.max(bw * 0.55, h * 0.2);
+// One peak: a spire with concave flanks — a needle summit sweeping out into a broad,
+// low skirt — standing on an elliptical footprint. The skirt widens with height, so
+// neighbouring peaks run together into ranges.
+const peakHalfWidth = (bw, h) => Math.max(bw * 0.7, h * 0.26);
+const CONCAVE = 2.8;
+const profile = (u) => (1 - Math.abs(u)) ** CONCAVE;
 function peakPath(cx, y, bw, h) {
   const rb = peakHalfWidth(bw, h);
-  const ry = Math.min(rb * 0.3, 4);
+  const ry = Math.min(rb * 0.28, 4);
+  const path = new Path2D();
+  const N = 40;
+  for (let k = 0; k <= N; k++) {
+    const u = -1 + (2 * k) / N;
+    const py = y - h * profile(u);
+    if (k) path.lineTo(cx + u * rb, py); else path.moveTo(cx + u * rb, py);
+  }
+  path.ellipse(cx, y, rb, ry, 0, 0, Math.PI);
+  path.closePath();
+  return path;
+}
+// Its shadow, laid on the ground away from the light: long to the right, slightly back.
+function shadowPath(cx, y, bw, h) {
+  const rb = peakHalfWidth(bw, h);
   const path = new Path2D();
   const N = 24;
   for (let k = 0; k <= N; k++) {
     const u = -1 + (2 * k) / N;
-    const px = cx + u * rb;
-    // Concave flanks rising to a sharp summit, like a real peak.
-    const py = y - h * (1 - Math.abs(u)) ** 1.7;
+    const up = h * profile(u);
+    const px = cx + u * rb + up * 0.62;
+    const py = y - up * 0.16;
     if (k) path.lineTo(px, py); else path.moveTo(px, py);
   }
-  path.ellipse(cx, y, rb, ry, 0, 0, Math.PI);
+  path.ellipse(cx, y, rb, Math.min(rb * 0.28, 4), 0, 0, Math.PI);
   path.closePath();
   return path;
 }

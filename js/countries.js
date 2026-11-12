@@ -3,19 +3,18 @@
 // it has been marked as visited by hand: places you've been but haven't recorded.
 
 import { unwrapGeo } from './geo.js';
+import { shown, resolveName, nameIndex, search } from './country-names.js';
 
 const L = window.L;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
-// Our place names → Natural Earth names (used by world-atlas). The real data model will store ISO codes.
-const ALIAS = { 'United States': 'United States of America', 'Czech Republic': 'Czechia' };
+// Place country names are matched to map shapes by name (resolveName in country-names.js).
+// The real data model will store ISO codes.
 // world-atlas draws these as one shape each; subunits-50m.json (Natural Earth map units) splits them:
 // the UK into its four nations, and France, Norway and the Netherlands into home country and
 // overseas parts, so a trip to Paris doesn't colour in French Guiana.
 const SPLIT = new Set(['United Kingdom', 'France', 'Norway', 'Netherlands']);
-const DISPLAY = { 'United States of America': 'United States', Vatican: 'Vatican City' };
-const shown = (name) => DISPLAY[name] || name;
 const MARK_KEY = 'pins.countries.marked';
 
 export function initCountries({ PINS, placeById, colourAt, timeT, onOpen }) {
@@ -27,8 +26,8 @@ export function initCountries({ PINS, placeById, colourAt, timeT, onOpen }) {
   const stats = {};
   for (const p of PINS) {
     const raw = placeById[p.place].country;
-    const name = ALIAS[raw] || raw;
-    const s = (stats[name] ||= { n: 0, first: p, last: p, shown: DISPLAY[name] || name });
+    const name = resolveName(raw);
+    const s = (stats[name] ||= { n: 0, first: p, last: p, shown: shown(name) });
     s.n++;
     if (p.date < s.first.date) s.first = p;
     if (p.date > s.last.date) s.last = p;
@@ -38,6 +37,7 @@ export function initCountries({ PINS, placeById, colourAt, timeT, onOpen }) {
   let layer = null;
   let dots = null;
   let features = [];
+  let index = [];
   let marking = false;
 
   const fillOf = (name) => {
@@ -63,16 +63,44 @@ export function initCountries({ PINS, placeById, colourAt, timeT, onOpen }) {
     else el.innerHTML = `<b>${esc(shown(name))}</b> · not yet`;
   }
 
-  function onCountry(f) {
-    const name = f.properties.name;
-    if (marking) {
-      if (stats[name]) { info(name); $('c-info').innerHTML += ' · coloured by its memories'; return; }
-      if (marked.has(name)) marked.delete(name); else marked.add(name);
-      saveMarked();
-      refresh();
-    }
+  // Mark or unmark by hand. Countries with memories are coloured by those and stay put.
+  function toggle(name, on = !marked.has(name)) {
+    if (stats[name]) { info(name); $('c-info').innerHTML += ' · coloured by its memories'; return; }
+    if (on) marked.add(name); else marked.delete(name);
+    saveMarked();
+    refresh();
     info(name);
   }
+
+  function onCountry(f) {
+    if (marking) toggle(f.properties.name);
+    else info(f.properties.name);
+  }
+
+  // Type a name instead of finding it on the map.
+  const q = $('c-q');
+  const sugg = $('c-sugg');
+  let hits = [];
+  function suggest() {
+    hits = search(index, q.value);
+    sugg.hidden = !hits.length;
+    sugg.innerHTML = hits.map((name, i) => {
+      const state = stats[name] ? 'has memories' : marked.has(name) ? 'visited · tap to unmark' : '';
+      return `<li><button type="button" data-i="${i}"><span>${esc(shown(name))}</span><small>${state}</small></button></li>`;
+    }).join('');
+  }
+  function pick(name) {
+    toggle(name);
+    q.value = '';
+    suggest();
+  }
+  q.addEventListener('input', suggest);
+  q.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && hits.length) { e.preventDefault(); pick(hits[0]); }
+    if (e.key === 'Escape') { q.value = ''; suggest(); e.stopPropagation(); }
+  });
+  sugg.addEventListener('click', (e) => { const b = e.target.closest('button[data-i]'); if (b) pick(hits[+b.dataset.i]); });
+  $('c-list').addEventListener('click', (e) => { const b = e.target.closest('[data-unmark]'); if (b) toggle(b.dataset.unmark, false); });
 
   function drawDots() {
     // Small countries vanish at world scale; give each visited one a dot. While marking,
@@ -102,7 +130,7 @@ export function initCountries({ PINS, placeById, colourAt, timeT, onOpen }) {
     $('c-list').innerHTML = rows.map(({ name, s }) => {
       const y0 = s.first.date.slice(0, 4);
       return `<li><i style="background:rgb(${colourAt(timeT(s.first)).join(',')})"></i><span class="c-name">${esc(s.shown)}</span><span class="c-meta num">${s.n} · since ${y0}</span></li>`;
-    }).join('') + extra.map((n) => `<li class="marked"><i></i><span class="c-name">${esc(shown(n))}</span><span class="c-meta">no memories</span></li>`).join('');
+    }).join('') + extra.map((n) => `<li class="marked"><i></i><span class="c-name">${esc(shown(n))}</span><span class="c-meta">no memories</span><button type="button" class="c-x" data-unmark="${esc(n)}" aria-label="Unmark ${esc(shown(n))}">×</button></li>`).join('');
   }
 
   function refresh() {
@@ -122,6 +150,8 @@ export function initCountries({ PINS, placeById, colourAt, timeT, onOpen }) {
       style,
       onEachFeature: (f, l) => { f._bounds = l.getBounds(); features.push(f); l.on('click', () => onCountry(f)); },
     }).addTo(map);
+    index = nameIndex(features.map((f) => f.properties.name));
+    if (q.value) suggest();
     dots = L.layerGroup().addTo(map);
     drawDots();
     fit();
