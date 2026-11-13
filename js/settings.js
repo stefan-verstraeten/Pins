@@ -18,7 +18,7 @@ function ago(t) {
 }
 
 let waiting = 0;
-let showCode = false;
+let codeUrl = '';
 
 async function render() {
   if ($('library').hidden) return;
@@ -35,7 +35,10 @@ async function render() {
       <div class="lib-actions">${standalone()
         ? '<button class="btn primary" id="lib-code-start">Connect Dropbox</button>'
         : '<button class="btn primary" id="lib-connect">Connect Dropbox</button><button class="btn" id="lib-code-start">Use a code instead</button>'}</div>
-      ${showCode ? `<p class="lib-sub" style="margin-top:12px">Sign in in the window that opened, allow Pins, then copy the code Dropbox shows and paste it here.</p>
+      ${codeUrl ? `<ol class="lib-steps">
+        <li><a class="btn primary" href="${esc(codeUrl)}" target="_blank" rel="noopener">Open Dropbox sign-in</a></li>
+        <li>Sign in, allow Pins, and copy the code Dropbox shows.</li>
+        <li>Close that page (Done, top left) and paste the code here:</li></ol>
       <div class="lib-code"><input class="cap-input" id="lib-code" placeholder="Paste the code" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn primary" id="lib-code-go">Connect</button></div>` : ''}`;
   } else {
     const pending = [s.dirty ? 'changes' : '', waiting ? `${waiting} ${waiting === 1 ? 'photo' : 'photos'}` : ''].filter(Boolean).join(' and ');
@@ -81,13 +84,13 @@ export function initSettings({ toast, onOpen }) {
     if (!b) return;
     try {
       if (b.id === 'lib-connect') await lib.dropbox.connect();
-      else if (b.id === 'lib-code-start') { showCode = true; await lib.dropbox.connectByCode(); render(); }
+      else if (b.id === 'lib-code-start') { codeUrl = await lib.dropbox.codeLoginUrl(); }
       else if (b.id === 'lib-code-go') {
         const code = $('lib-code').value.trim();
         if (!code) return;
         b.disabled = true;
         await lib.dropbox.connectWithCode(code);
-        showCode = false;
+        codeUrl = '';
         toast('Connected to Dropbox.');
         await lib.sync();
       } else if (b.id === 'lib-sync') await lib.sync();

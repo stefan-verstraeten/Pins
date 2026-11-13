@@ -37,8 +37,9 @@ async function authorizeUrl(withRedirect) {
 export async function connect() { location.href = await authorizeUrl(true); }
 
 // From the home-screen app, a round trip through Safari can land outside the app, so
-// Dropbox shows a code instead, which is pasted back in (connectWithCode).
-export async function connectByCode() { window.open(await authorizeUrl(false), '_blank'); }
+// Dropbox shows a code instead, which is pasted back in (connectWithCode). The sign-in
+// page is offered as a plain link: iOS blocks windows that a script opens after a delay.
+export const codeLoginUrl = () => authorizeUrl(false);
 
 async function exchange(code) {
   let pkce = {};
