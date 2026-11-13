@@ -48,8 +48,8 @@ Grand Tour's language, evolved so the map becomes the application.
 Kept on the phone first (IndexedDB), so capture works offline, then synced to Dropbox:
 
 ```
-/Pins/pins.json                 places, trips, people, memories, marked countries
-/Pins/photos/<year>/<id>.jpg    photo masters, 3,200 px on the long side
+/Stefans Corner/Pins/pins.json                 places, trips, people, memories, marked countries
+/Stefans Corner/Pins/photos/<year>/<id>.jpg    photo masters, 3,200 px on the long side
 ```
 
 Every record carries `updatedAt`; deletions leave a tombstone. Two phones syncing at once
@@ -60,7 +60,7 @@ written to Dropbox, and the Library sheet (cloud button) can hide them.
 **Setting up Dropbox (once):** create an app at dropbox.com/developers/apps with
 *Scoped access* and *Full Dropbox*; give it the permissions `files.content.read` and
 `files.content.write`; add the redirect URIs `https://stefan-verstraeten.github.io/Pins/`
-and `http://localhost:8010/`; put its App key in `js/config.js`. Share the `/Pins`
+and `http://localhost:8010/`; put its App key in `js/config.js`. Share the `/Stefans Corner/Pins`
 folder with the second Dropbox account so both phones use the same atlas.
 
 The app shell is cached by a service worker (`sw.js`, network first), so Pins opens

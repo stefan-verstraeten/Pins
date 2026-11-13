@@ -31,7 +31,7 @@ async function render() {
       <p class="lib-sub">Pins needs its own Dropbox app key before it can sync. Until then, memories are kept on this device only.</p>`;
   } else if (!s.connected) {
     dropbox = `<p class="lib-status">Not connected.</p>
-      <p class="lib-sub">Memories are kept on this device until you connect. Then they go to the Pins folder in your Dropbox, with the photos.</p>
+      <p class="lib-sub">Memories are kept on this device until you connect. Then they go to Stefans Corner/Pins in your Dropbox, with the photos.</p>
       <div class="lib-actions">${standalone()
         ? '<button class="btn primary" id="lib-code-start">Connect Dropbox</button>'
         : '<button class="btn primary" id="lib-connect">Connect Dropbox</button><button class="btn" id="lib-code-start">Use a code instead</button>'}</div>
